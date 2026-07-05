@@ -9,21 +9,21 @@ export const ORBIT_SEQUENCE = {
 export const COLORWAYS = {
   black: {
     name: 'Carbon Black',
-    word: 'BLACK',
+    word: 'CARBON BLACK',
     image: './assets/images/editorial/black.webp',
     responsiveImage: './assets/images/responsive/black-960.webp',
     background: '#d8d7d1'
   },
   red: {
     name: 'Burgundy Red',
-    word: 'RED',
+    word: 'BURGUNDY RED',
     image: './assets/images/editorial/red.webp',
     responsiveImage: './assets/images/responsive/red-960.webp',
     background: '#d7b2ae'
   },
   blue: {
     name: 'Deep Blue',
-    word: 'BLUE',
+    word: 'DEEP BLUE',
     image: './assets/images/editorial/blue.webp',
     responsiveImage: './assets/images/responsive/blue-960.webp',
     background: '#abb9ca'

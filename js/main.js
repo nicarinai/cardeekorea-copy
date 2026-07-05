@@ -72,6 +72,8 @@ function initOrbitSequence() {
   let requestedFrame = 0;
   let renderedFrame = -1;
   let scrollTicking = false;
+  // Keep the final product angle visible briefly before the sticky scene releases.
+  // This prevents the last chapter from being skipped by one fast wheel gesture.
   const exitHold = 0.18;
 
   const draw = (index) => {
@@ -139,6 +141,8 @@ function initOrbitSequence() {
     window.requestAnimationFrame(update);
   };
 
+  // Load the opening motion densely, then representative frames across the full arc.
+  // The user gets an immediate first response while the rest streams in batches.
   const priority = [0, 1, 2, 3, 4, 5, 6, 7, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 111];
   priority.forEach(loadFrame);
 
@@ -200,12 +204,48 @@ function initFeatureTabs() {
   });
 }
 
+function initPremiseFilm() {
+  const film = document.querySelector('[data-premise-film]');
+  if (!film) return;
+
+  // Restarting the class starts one information sequence as the section enters view:
+  // two usable angles -> attached side profile -> 2.00mm emphasis.
+  const play = () => {
+    film.classList.add('is-primed');
+    film.classList.remove('is-playing');
+    void film.offsetWidth;
+    film.classList.add('is-playing');
+  };
+
+  film.classList.add('is-primed');
+
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      play();
+      observer.unobserve(film);
+    }, { threshold: 0.32 });
+    observer.observe(film);
+  } else {
+    play();
+  }
+
+  film.addEventListener('click', play);
+  film.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    play();
+  });
+}
+
 function initColors() {
   const tabs = [...document.querySelectorAll('[data-color]')];
+  const carousel = document.querySelector('[data-color-carousel]');
+  const track = document.querySelector('[data-color-track]');
   const stage = document.querySelector('[data-color-stage]');
-  const image = document.querySelector('[data-color-image]');
+  let image = document.querySelector('[data-color-image]');
   const word = document.querySelector('[data-color-word]');
-  if (!tabs.length || !stage || !image || !word) return;
+  if (!tabs.length || !carousel || !track || !stage || !image || !word) return;
 
   Object.values(COLORWAYS).forEach((color) => {
     const preload = new Image();
@@ -213,26 +253,78 @@ function initColors() {
   });
 
   let transitionTimer;
-  const select = (tab) => {
+  let transitionId = 0;
+  const centerPreview = (selectedTab, instant = false) => {
+    const carouselRect = carousel.getBoundingClientRect();
+    const tabRect = selectedTab.getBoundingClientRect();
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(track).transform);
+    const targetX = matrix.m41 + (carouselRect.left + carouselRect.width / 2 - tabRect.left - tabRect.width / 2);
+    if (instant) track.style.transition = 'none';
+    track.style.transform = `translate3d(${targetX}px, -50%, 0)`;
+    if (instant) {
+      void track.offsetWidth;
+      track.style.transition = '';
+    }
+  };
+
+  const select = async (tab) => {
     const color = COLORWAYS[tab.dataset.color];
     if (!color) return;
+    if (stage.classList.contains('changing')) return;
+    if (tab.classList.contains('active')) return;
+
+    transitionId += 1;
+    const currentTransition = transitionId;
+
+    const activeIndex = tabs.indexOf(tab);
+    carousel.dataset.activeIndex = String(activeIndex);
     tabs.forEach((item) => {
       const active = item === tab;
       item.classList.toggle('active', active);
       item.setAttribute('aria-selected', String(active));
       item.tabIndex = active ? 0 : -1;
     });
+    centerPreview(tab);
+
     stage.classList.add('changing');
     window.clearTimeout(transitionTimer);
-    transitionTimer = window.setTimeout(() => {
-      const selectedSource = window.innerWidth <= 960 ? color.responsiveImage : color.image;
-      image.src = selectedSource;
-      image.srcset = `${color.responsiveImage} 960w, ${color.image} 1920w`;
-      image.alt = `${color.name} cardee Xeno`;
+    const selectedSource = window.innerWidth <= 960 ? color.responsiveImage : color.image;
+    const incoming = image.cloneNode(false);
+    incoming.removeAttribute('data-color-image');
+    incoming.className = 'colors__image';
+    incoming.src = selectedSource;
+    incoming.srcset = `${color.responsiveImage} 960w, ${color.image} 1920w`;
+    incoming.alt = `${color.name} cardee Xeno`;
+    image.insertAdjacentElement('afterend', incoming);
+
+    try {
+      await incoming.decode();
+    } catch {
+      // Cached images may still render when decode() is interrupted.
+    }
+    if (currentTransition !== transitionId) {
+      incoming.remove();
+      return;
+    }
+
+    const outgoing = image;
+    const reveal = () => {
+      incoming.classList.add('is-current');
+      outgoing.classList.remove('is-current');
+      outgoing.classList.add('is-leaving');
       word.textContent = color.word;
       stage.style.setProperty('--color-bg', color.background);
+    };
+
+    window.requestAnimationFrame(() => window.requestAnimationFrame(reveal));
+
+    transitionTimer = window.setTimeout(() => {
+      if (currentTransition !== transitionId) return;
+      outgoing.remove();
+      incoming.setAttribute('data-color-image', '');
+      image = incoming;
       stage.classList.remove('changing');
-    }, reducedMotion ? 0 : 220);
+    }, 820);
   };
 
   tabs.forEach((tab, index) => {
@@ -250,10 +342,60 @@ function initColors() {
       tabs[nextIndex].focus();
     });
   });
+
+  const initialTab = tabs.find((tab) => tab.classList.contains('active')) || tabs[0];
+  centerPreview(initialTab, true);
+  window.addEventListener('resize', () => {
+    const selectedTab = tabs.find((tab) => tab.classList.contains('active')) || tabs[0];
+    window.requestAnimationFrame(() => centerPreview(selectedTab, true));
+  }, { passive: true });
+}
+
+function initExperienceTabs() {
+  const root = document.querySelector('[data-experience]');
+  if (!root) return;
+
+  const tabs = [...root.querySelectorAll('[data-experience-tab]')];
+  const panels = [...root.querySelectorAll('[data-experience-panel]')];
+  if (!tabs.length || tabs.length !== panels.length) return;
+
+  const select = (selectedTab) => {
+    const key = selectedTab.dataset.experienceTab;
+    tabs.forEach((tab) => {
+      const active = tab === selectedTab;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+    panels.forEach((panel) => {
+      const active = panel.dataset.experiencePanel === key;
+      panel.classList.toggle('active', active);
+      panel.setAttribute('aria-hidden', String(!active));
+    });
+  };
+
+  tabs.forEach((tab, index) => {
+    tab.tabIndex = tab.classList.contains('active') ? 0 : -1;
+    tab.addEventListener('click', () => select(tab));
+    tab.addEventListener('keydown', (event) => {
+      let nextIndex = index;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      select(tabs[nextIndex]);
+      tabs[nextIndex].focus();
+    });
+  });
+
 }
 
 initPageChrome();
 initReveals();
 initOrbitSequence();
 initFeatureTabs();
+initPremiseFilm();
+initExperienceTabs();
 initColors();
